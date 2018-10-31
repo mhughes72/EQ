@@ -4,7 +4,6 @@ from pyspark.sql import Row
 from pyspark.sql import functions
 from pyspark.sql import SQLContext
 from pyspark.mllib.stat import Statistics
-
 import collections
 import numpy as np
 
@@ -57,7 +56,6 @@ sqlCalcDist = "SELECT c.ID, p.POIID, c.City, c.LatitudeCity, c.LongitudeCity, p.
 (6371000 * acos(cos(radians(c.LatitudeCity)) * cos(radians(p.LatitudePOI)) * cos(radians(p.LongitudePOI) - radians(c.LongitudeCity)) + sin(radians(c.LatitudeCity)) * sin(radians(p.LatitudePOI)))) \
 AS distance \
 FROM POIData p CROSS JOIN CityData c ORDER BY distance"
-
 dfWithDistance = sqlContext.sql(sqlCalcDist).orderBy("ID")
 distanceWithPOID = dfWithDistance.rdd.map(lambda l: ((l[0]), ((l[1]), (l[7]))))
 
@@ -65,10 +63,11 @@ onlyMaxDist = distanceWithPOID.reduceByKey(reduceByPOID).map(getMaxDistance)
 dfPOID = onlyMaxDist.map(mapPOID02).toDF()
 dfCities = CityData2.rdd.map(mapCities02).toDF()
 
-finalJoin = dfCities.join(dfPOID, dfCities.ID_remove == dfPOID.ID).drop('ID_remove')
+finalCities = dfCities.join(dfPOID, dfCities.ID_remove == dfPOID.ID).drop('ID_remove')
 
-MyData = finalJoin.registerTempTable('MyData')
+MyData = finalCities.registerTempTable('MyData')
 
+#Using SQL to get means and std for distances to POID
 sqlMeanStd = "SELECT stddev(c.distance) AS standev, mean(c.distance) AS mean FROM MyData c WHERE c.POIID = 'POI1' \
         UNION ALL \
         SELECT stddev(c.distance) AS standev, mean(c.distance) AS mean FROM MyData c WHERE c.POIID = 'POI2' \
@@ -76,10 +75,9 @@ sqlMeanStd = "SELECT stddev(c.distance) AS standev, mean(c.distance) AS mean FRO
         SELECT stddev(c.distance) AS standev, mean(c.distance) AS mean FROM MyData c WHERE c.POIID = 'POI3' \
         UNION ALL \
         SELECT stddev(c.distance) AS standev, mean(c.distance) AS mean FROM MyData c WHERE c.POIID = 'POI4'"
+finalPOID = sqlContext.sql(sqlMeanStd)
+finalCities.groupBy("POIID").mean("distance").show(5)
 
-final1 = sqlContext.sql(sqlMeanStd)
-finalJoin.groupBy("POIID").mean("distance").show(5)
-
-print(finalJoin.show())
-final1.toPandas().to_csv('EQFinalPOID.csv')
-finalJoin.toPandas().to_csv('EQFinalCities.csv')
+print(finalCities.show())
+finalPOID.toPandas().to_csv('EQFinalPOID.csv')
+finalCities.toPandas().to_csv('EQFinalCities.csv')
